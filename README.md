@@ -1,0 +1,2 @@
+# Terminal-Type
+Idk yet
