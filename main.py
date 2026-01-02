@@ -1,5 +1,38 @@
 import curses
 import time
+import random
+
+# Random word generator from wordlist.txt
+def random_words(number_of_words):
+
+    with open("./wordlist.txt", "r") as file:
+        
+        total_lines = 0
+        wordlist = []
+        
+        # Count how many lines there are and also append them to the wordlist var
+        for line in file.readlines():
+            total_lines += 1
+            wordlist.append(line.strip("\n"))
+        
+        # For each word neede generate a random int between the total_lines -1 and 0
+        random_words = ""
+        first_time = True
+        for i in range(number_of_words):
+            
+            # Random int
+            random_num = random.randint(0, total_lines -1)
+
+            # Only run once
+            if first_time == True:
+                random_words += wordlist[random_num]
+                first_time = False
+
+            else:
+                random_words += " " + wordlist[random_num]
+
+        file.close()
+        return random_words
 
 # Helper function to align text
 def center(terminal, text):
@@ -25,25 +58,25 @@ def results(terminal, errors, start_time, end_time, text):
     X_CENTER, Y_CENTER = center(terminal, wpm)
 
     # Clear the terminal and print results
-    terminal.clear()
-    terminal.addstr(X_CENTER - 6, Y_CENTER, wpm)
+    terminal.addstr(X_CENTER + 5, Y_CENTER, wpm)
 
     # Message if the user gets -percentage
     if accuracy < 0:
-        msg = " bruh you kinda suck"
+        msg = " bruh you lowkey kinda suck"
 
-    terminal.addstr(X_CENTER - 5, Y_CENTER, f"Accuracy -> {round(accuracy, 2)}%{msg}")
+    terminal.addstr(X_CENTER + 6, Y_CENTER, f"Accuracy -> {round(accuracy, 2)}%{msg}")
+    terminal.addstr(X_CENTER + 7, Y_CENTER, f"Errors -> {errors}")
     X_CENTER, Y_CENTER = center(terminal, "Press ENTER to restart or Q to quit.")
-    terminal.addstr(X_CENTER + 3, Y_CENTER, f"Press ENTER to restart or Q to quit.")
+    terminal.addstr(X_CENTER + 9, Y_CENTER, f"Press ENTER to restart or Q to quit.")
 
     terminal.refresh()
-    
-    key_pressed = terminal.getch()
 
-    if key_pressed == curses.KEY_ENTER:
-        return "restart"
-    elif key_pressed == ord("q"):
-        return "exit"
+    # Probaly not the best way to handle exiting but thats a problem for future me, curses.KEY_ENTER stopped working for me so using 10 instead.
+    match wait_for_key(terminal, (10, ord("q"))):
+        case True:
+            return "restart"
+        case False:
+            return "exit"
 
 # Function to handle key presses
 def handle_keypresses(state, key, text):
@@ -107,6 +140,19 @@ def draw_term(terminal, text, state):
     # Finally refresh the screen
     terminal.refresh()
 
+# Input helper function to wait for 2 certain key presses, e.g ENTER and Q
+def wait_for_key(terminal, keys = ()):
+
+    while True:
+
+        key_pressed = terminal.getch()
+
+        if key_pressed == keys[0]:
+            return True
+        elif key_pressed == keys[1]:
+            return False
+      
+
 # Main-loop to handle all main-loopy stuff
 def main_loop(terminal):
 
@@ -118,12 +164,9 @@ def main_loop(terminal):
         "start_time": None,
         "incorrect": False,
     }
-    
-    text = "The quick brown fox jumps over the lazy dog"
 
     terminal = curses.initscr() # Dosen't need to be here but need it for vscode function autocompleations
     curses.curs_set(0)
-    
 
     # Set some color
     curses.start_color()
@@ -133,7 +176,12 @@ def main_loop(terminal):
     curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_WHITE)  # Cursor
     curses.init_pair(4, curses.COLOR_BLACK, curses.COLOR_RED)  # Cursor incorrect
 
+    # Clear terminal
+    terminal.clear()
+    terminal.refresh()
+
     # Print starting text
+    text = random_words(10)
     X_CENTER, Y_CENTER = center(terminal, text)
     terminal.addstr(X_CENTER, Y_CENTER, text, curses.color_pair(2))
 
@@ -152,8 +200,6 @@ def main_loop(terminal):
     end_time = time.perf_counter()
 
     return results(terminal, state["errors"], state["start_time"], end_time, text)
-
-
 
 
 # Encase main loop in a wrapper to catch error and handle exiting properly
