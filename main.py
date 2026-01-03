@@ -3,7 +3,7 @@ import time
 import random
 import configparser
 
-# Class to save and load personal bests
+# Class to save and load personal bests. used class becuase I was sick of functions
 class config_file:
     def __init__(self):
         self.config = configparser.ConfigParser()
@@ -39,8 +39,6 @@ class config_file:
         
         return False
 
-
-
 # Random word generator from wordlist.txt
 def random_words(number_of_words):
 
@@ -73,7 +71,7 @@ def random_words(number_of_words):
         file.close()
         return random_words
 
-# Helper function to align text
+# Helper function to center text
 def center(terminal, text):
 
     h, w = terminal.getmaxyx()
@@ -83,13 +81,13 @@ def center(terminal, text):
     return x, y
 
 # Function to print results to terminal
-def results(terminal, errors, start_time, end_time, text):
+def results(terminal, state, end_time, text):
 
     # Calculate wdm
     characters = len(text)
-    total_time = end_time - start_time
-    accuracy = ((characters - errors) / characters) * 100
-    wpm = round((characters / 5) * (60 / total_time) - errors, 2)
+    total_time = end_time - state["start_time"]
+    accuracy = ((characters - state["errors"]) / characters) * 100
+    wpm = state["current_wpm"]
     msg = ""
 
     # If wpm is bigger than personal best save it
@@ -111,7 +109,7 @@ def results(terminal, errors, start_time, end_time, text):
         msg = " bruh you lowkey kinda suck"
 
     terminal.addstr(X_CENTER + 6, Y_CENTER, f"Accuracy -> {round(accuracy, 2)}%{msg}")
-    terminal.addstr(X_CENTER + 7, Y_CENTER, f"Errors -> {errors}")
+    terminal.addstr(X_CENTER + 7, Y_CENTER, f"Errors -> {state["errors"]}")
     X_CENTER, Y_CENTER = center(terminal, "Press ENTER to restart or Q to quit.")
     terminal.addstr(X_CENTER + 9, Y_CENTER, f"Press ENTER to restart or Q to quit.")
 
@@ -125,7 +123,7 @@ def results(terminal, errors, start_time, end_time, text):
             return "exit"
 
 # Function to handle key presses
-def handle_keypresses(state, key, text):
+def handle_typing(state, key, text):
 
     # Check if index is bigger than the leg of text
     if state["index"] > len(text):
@@ -154,11 +152,8 @@ def handle_keypresses(state, key, text):
 
     return state["index"] == len(text)
 
-# Function to handle ui drawing
+# Function to handle ui drawing 
 def draw_term(terminal, text, state):
-
-    # Clear screen to start off with
-    terminal.clear()
     
     # Get all 3 different states of characters
     typed_chars = text[:state["index"]]
@@ -167,6 +162,9 @@ def draw_term(terminal, text, state):
 
     # Return cords to align text to center of terminal
     x, y = center(terminal, text)
+
+    # Print status bar thing for live view of wpm
+    terminal.addstr(x - 2, y, f"{state["current_wpm"]} | {round(state["elapsed"], 2)}")
     
     # Print typed characters
     terminal.addstr(x, y, typed_chars, curses.color_pair(1))
@@ -198,7 +196,6 @@ def wait_for_key(terminal, keys = ()):
         elif key_pressed == keys[1]:
             return False
       
-
 # Main-loop to handle all main-loopy stuff
 def main_loop(terminal):
 
@@ -209,10 +206,13 @@ def main_loop(terminal):
         "started": False,
         "start_time": None,
         "incorrect": False,
+        "current_wpm": 0,
+        "elapsed": 0,
     }
 
     terminal = curses.initscr() # Dosen't need to be here but need it for vscode function autocompleations
     curses.curs_set(0)
+    terminal.nodelay(True)
 
     # Set some color
     curses.start_color()
@@ -228,6 +228,7 @@ def main_loop(terminal):
 
     # Print starting text
     text = random_words(10)
+    text = "the quick brown fox jumps over the lazy dog"
     X_CENTER, Y_CENTER = center(terminal, text)
     terminal.addstr(X_CENTER, Y_CENTER, text, curses.color_pair(2))
 
@@ -236,16 +237,30 @@ def main_loop(terminal):
     while finished == False:
 
         # Get pressed key
-        pressed_key = terminal.getch()
+        key = terminal.getch()
 
-        finished = handle_keypresses(state, pressed_key, text)
+        if key != -1:
+            finished = handle_typing(state, key, text)
+
+        # Calculate the eclypsed time between last key press and this one to get wpm
+        if state["started"] == True:
+            state["elapsed"] = time.perf_counter() - state["start_time"]
+        else:
+            state["elapsed"] = 0
+
+        if state["elapsed"] > 0:
+            state["current_wpm"] = round(
+                ((state["index"] - state["errors"]) / 5) * (60 / state["elapsed"]),
+                2
+            )
+
         draw_term(terminal, text, state)
 
     
     # After while loop exits stop the timer
     end_time = time.perf_counter()
 
-    return results(terminal, state["errors"], state["start_time"], end_time, text)
+    return results(terminal, state, end_time, text)
 
 
 # Encase main loop in a wrapper to catch error and handle exiting properly
