@@ -1,6 +1,45 @@
 import curses
 import time
 import random
+import configparser
+
+# Class to save and load personal bests
+class config_file:
+    def __init__(self):
+        self.config = configparser.ConfigParser()
+        self.config_filename = "config.ini"
+
+    # Load config file
+    def load(self):
+
+        # Load config file
+        self.config.read(self.config_filename)
+
+        # Load best wpm
+        best_wpm = self.config["Personal Best"]["best_wpm"]
+
+        return float(best_wpm)
+
+    
+    # Save lconfig file
+    def save(self, new_best_wpm):
+
+        # Compare new best wpm to saved one
+        if new_best_wpm > self.load():
+
+            self.config["Personal Best"] = {
+                "best_wpm": new_best_wpm
+            }
+
+            # Write the config to the file
+            with open(self.config_filename, "w") as configfile:
+                self.config.write(configfile)
+
+            return True
+        
+        return False
+
+
 
 # Random word generator from wordlist.txt
 def random_words(number_of_words):
@@ -49,12 +88,19 @@ def results(terminal, errors, start_time, end_time, text):
     # Calculate wdm
     characters = len(text)
     total_time = end_time - start_time
+    accuracy = ((characters - errors) / characters) * 100
+    wpm = round((characters / 5) * (60 / total_time) - errors, 2)
     msg = ""
 
-    wpm = f"Words Per Minute -> {round((characters / 5) * (60 / total_time) - errors, 2)}"
-    accuracy = ((characters - errors) / characters) * 100
+    # If wpm is bigger than personal best save it
+    new_best = False
+    cfg = config_file()
+    if cfg.save(wpm) == True:
+        new_best = True
+        X_CENTER, Y_CENTER = center(terminal, "New Best!")
+        terminal.addstr(X_CENTER - 5, Y_CENTER, f"New Best!")
 
-
+    wpm = f"Words Per Minute -> {wpm} Best -> {cfg.load()}"
     X_CENTER, Y_CENTER = center(terminal, wpm)
 
     # Clear the terminal and print results
