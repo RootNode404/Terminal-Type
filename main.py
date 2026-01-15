@@ -1,276 +1,380 @@
-import curses
-import time
-import random
-import configparser
+import curses        # TUI functionality
+import time          # Timing and wpm calc
+import configparser  # Loading and saving of config files
+import os.path       # Check of config file exists
+import random        # Random number for random word generator
 
-# Class to save and load personal bests. used class becuase I was sick of functions
+# Class to save and load personal bests
 class config_file:
     def __init__(self):
         self.config = configparser.ConfigParser()
         self.config_filename = "config.ini"
+        self.best_run = {}
 
-    # Load config file
-    def load(self):
+    # Function to check if a config file is present
+    def check_for_config(self):
+        
+        # Only create a config file if one is not present
+        if os.path.isfile(self.config_filename) == False:
+
+            self.config["Best Run"] = {
+                "wpm": 0,
+                "acc": 0,
+                "err": 0
+                }
+            
+            # Create a new config and open it
+            with open(self.config_filename, "x") as configfile:
+                self.config.write(configfile)
+
+        # Else if config is present then just load it
+        elif os.path.isfile(self.config_filename) == True:
+            self.load()
+
+    # Function to load best runs
+    def load(self, do_return=False):
 
         # Load config file
         self.config.read(self.config_filename)
 
-        # Load best wpm
-        best_wpm = self.config["Personal Best"]["best_wpm"]
+        # Return best scores as a dictonary
+        self.best_run = self.config["Best Run"]
 
-        return float(best_wpm)
+        if do_return == True:
+            return self.config["Best Run"]
 
-    
-    # Save lconfig file
-    def save(self, new_best_wpm):
+    # Function to save config file
+    def check_n_save(self, possible_new_best_scores):
 
-        # Compare new best wpm to saved one
-        if new_best_wpm > self.load():
+        # Check if new score > than best
+        if possible_new_best_scores["wpm"] > float(self.best_run["wpm"]):
 
-            self.config["Personal Best"] = {
-                "best_wpm": new_best_wpm
+            # Set the new best run
+            self.config["Best Run"] = {
+            "wpm": possible_new_best_scores["wpm"],
+            "acc": possible_new_best_scores["acc"],
+            "err": possible_new_best_scores["err"]
             }
 
-            # Write the config to the file
+            # Write it to the file
             with open(self.config_filename, "w") as configfile:
-                self.config.write(configfile)
+                self.config.write(configfile)   
 
+            # return true :)
             return True
-        
-        return False
-
-# Random word generator from wordlist.txt
+            
+# Random word generator
 def random_words(number_of_words):
 
     with open("./wordlist.txt", "r") as file:
-        
+
         total_lines = 0
         wordlist = []
-        
-        # Count how many lines there are and also append them to the wordlist var
+
+        # Count how many lines there are and also append each word to the wordlist
         for line in file.readlines():
             total_lines += 1
             wordlist.append(line.strip("\n"))
-        
-        # For each word neede generate a random int between the total_lines -1 and 0
+
+        # For each word needed generate a random int between the total_lines -1 and 0
         random_words = ""
-        first_time = True
         for i in range(number_of_words):
-            
+
             # Random int
-            random_num = random.randint(0, total_lines -1)
+            random_num = random.randint(0, total_lines - 1)
 
             # Only run once
-            if first_time == True:
+            if i == 0:
                 random_words += wordlist[random_num]
-                first_time = False
-
+            
+            # All the other times
             else:
                 random_words += " " + wordlist[random_num]
-
+            
         file.close()
         return random_words
 
-# Helper function to center text
-def center(terminal, text):
+            
 
-    h, w = terminal.getmaxyx()
+
+# Helper to center text
+def print_center_text(term, text, color=curses.COLOR_WHITE, offsetX=0, offsetY=0):
+
+    # Get center of terminal
+    h, w = term.getmaxyx()
     x = h // 2
     y = (w // 2) - (len(text) // 2)
 
-    return x, y
+    # Check of is list or just one string
+    if isinstance(text, tuple) == True:
 
-# Function to print results to terminal
-def results(terminal, state, end_time, text):
+        x = h // 2
+        y = (w // 2) - (len(text[0]) // 2)
+        
+        for sub_text in text:
+            term.addstr((x + offsetX), (y + offsetY), sub_text, color)
+            x += 1
+    
+    # Else if just one string
+    else:   
+        term.addstr((x + offsetX), (y + offsetY), text, color)
 
-    # Calculate wdm
-    characters = len(text)
-    total_time = end_time - state["start_time"]
-    accuracy = ((characters - state["errors"]) / characters) * 100
-    wpm = state["current_wpm"]
-    msg = ""
+# Draw the terminal typing
+def draw_term(term, master_text, master_values):
 
-    # If wpm is bigger than personal best save it
-    new_best = False
-    cfg = config_file()
-    if cfg.save(wpm) == True:
-        new_best = True
-        X_CENTER, Y_CENTER = center(terminal, "New Best!")
-        terminal.addstr(X_CENTER - 5, Y_CENTER, f"New Best!")
+    # Get the center of the screen realtive to the whole text
+    h, w = term.getmaxyx()
+    x = h // 2
+    y = (w // 2) - (master_values["len_of_text"] // 2)
 
-    wpm = f"Words Per Minute -> {wpm} Best -> {cfg.load()}"
-    X_CENTER, Y_CENTER = center(terminal, wpm)
+    # Clear the timer area before printing it. It was buggin and I didnt know what to do.
+    term.move(x - 2, 0)
+    term.clrtoeol()
 
-    # Clear the terminal and print results
-    terminal.addstr(X_CENTER + 5, Y_CENTER, wpm)
+    # Draw status bar for live wpm and time
+    term.addstr(x -2, y, f"{master_values['current_wpm']} | {round(master_values['time_elapsed'], 2)}")
 
-    # Message if the user gets -percentage
-    if accuracy < 0:
-        msg = " bruh you lowkey kinda suck"
+    # For each character in master_text
+    y_offset = 0
+    for char_index in master_text:
 
-    terminal.addstr(X_CENTER + 6, Y_CENTER, f"Accuracy -> {round(accuracy, 2)}%{msg}")
-    terminal.addstr(X_CENTER + 7, Y_CENTER, f"Errors -> {state["errors"]}")
-    X_CENTER, Y_CENTER = center(terminal, "Press ENTER to restart or Q to quit.")
-    terminal.addstr(X_CENTER + 9, Y_CENTER, f"Press ENTER to restart or Q to quit.")
+        # Get character
+        char = master_text[char_index]["char"]
 
-    terminal.refresh()
+        # Match statement to set color
+        match master_text[char_index]["state"]:
 
-    # Probaly not the best way to handle exiting but thats a problem for future me, curses.KEY_ENTER stopped working for me so using 10 instead.
-    match wait_for_key(terminal, (10, ord("q"))):
-        case True:
-            return "restart"
-        case False:
-            return "exit"
+            case "typed":
+                term.addstr(x, (y + y_offset), char, curses.color_pair(2))
+
+            case "cursor":
+                term.addstr(x, (y + y_offset), char, curses.color_pair(3))
+
+            case "untyped":
+                term.addstr(x, (y + y_offset), char, curses.color_pair(1))
+
+            case "error":
+                term.addstr(x, (y + y_offset), char, curses.color_pair(4))
+
+
+        term.refresh()
+
+        # Offset increase for each character
+        y_offset += 1
 
 # Function to handle key presses
-def handle_typing(state, key, text):
+def handle_typing(master_values, key, master_text):
 
-    # Check if index is bigger than the leg of text
-    if state["index"] > len(text):
-        return True  # Finished
+    # Check if cursor_index is bigger than text legnth
+    if master_values["cursor_index"] > master_values["len_of_text"] - 1:
+        master_text[master_values["cursor_index"]]["state"] = "typed"
+        return True
     
-    # Check if key is a alphabetical letter or an ANSI one
+    # Check if key is an alphabetical letter or an ANSI(backspace, esc, enter) escape sequence
     if 32 <= key <= 126:
+
+        # Move cursor
+        if master_values["cursor_index"] >= 0 and master_values["cursor_index"] < master_values["len_of_text"]:
+            master_text[master_values["cursor_index"] + 1]["state"] = "cursor"
+
+        # Convert key to string
         char = chr(key)
+
+        # Only run once to start the timer
+        if master_values["started"] == False:
+            
+            # Set to True to prevent running of this again
+            master_values["started"] = True
+            # Get current time
+            master_values["start_time"] = time.perf_counter()
+        
+        # Get the expected char to be typed
+        expected_char = master_text[master_values["cursor_index"]]["char"]
+
+        # If the character pressed matches the one that the cursor is on then set state to typed and move along
+        if char == expected_char:
+
+            # Set the char state to typed
+            master_text[master_values["cursor_index"]]["state"] = "typed"
+
+            # Move the cursor along one
+            master_values["cursor_index"] += 1
+
+        # Else if char pressed does not equal the current char
+        elif char != expected_char:
+
+            # Increase errors
+            master_values["errors"] += 1
+
+            # Set state of current char to error
+            master_text[master_values["cursor_index"]]["state"] = "error"
+
+            # Move the cursor along one
+            master_values["cursor_index"] += 1
+    
+    # Backspace
+    elif key in (curses.KEY_BACKSPACE, 127, 8) and master_values["cursor_index"] > 0:
+
+        # Change the cursor char to untyped
+        master_text[master_values["cursor_index"]]["state"] = "untyped"
+
+        # Move the cursor back one
+        master_values["cursor_index"] -= 1
+        
+        # Change the state to untyped, ready to be retyped
+        master_text[master_values["cursor_index"]]["state"] = "cursor"
+
     else:
         return False
+
+# Function to print results to screen
+def print_results(term, master_values, config):
+
+    # Caluclate wdm
+    errors = master_values["errors"]
+    characters = master_values["len_of_text"]
+    accuuracy = round(((characters - errors) / characters) * 100, 2)
+    wpm = round(
+        ((master_values["cursor_index"] - errors) / 5) * (60 / master_values["total_time"]), 
+        2
+    )
+
+
+    # Check for best run, if so then print message
+    possible_bests = {
+        "wpm": wpm,
+        "acc": accuuracy,
+        "err": errors
+    }
+    if config.check_n_save(possible_bests) == True:
+        print_center_text(term, "New Best!", offsetX=-10)
+
+    # Load bests
+    bests = config.load(do_return=True)
+
+    # Print the results to the screen
+    print_center_text(term, (f"Words Per Minute -> {wpm} | Best -> {bests["wpm"]}", f"Accuracy -> {accuuracy}% | Best -> {bests["acc"]}%", f"Errors -> {errors} | Best -> {bests["err"]}"), offsetX=+4)
+
+
+    print_center_text(term, "Press ENTER to restart or Q to quit", offsetX= +9)
     
-    # Get the expected index char
-    expected = text[state["index"]]
-
-    if char == expected:
-        if not state["started"]:
-            state["started"] = True
-            state["start_time"] = time.perf_counter()
-
-        state["index"] += 1
-        state["incorrect"] = False
-
-    elif char != expected:
-        state["errors"] += 1
-        state["incorrect"] = True
-
-    return state["index"] == len(text)
-
-# Function to handle ui drawing 
-def draw_term(terminal, text, state):
-    
-    # Get all 3 different states of characters
-    typed_chars = text[:state["index"]]
-    cursor_char = text[state["index"]:state["index"] + 1]
-    untyped_chars = text[state["index"] + 1:]
-
-    # Return cords to align text to center of terminal
-    x, y = center(terminal, text)
-
-    # Print status bar thing for live view of wpm
-    terminal.addstr(x - 2, y, f"{state["current_wpm"]} | {round(state["elapsed"], 2)}")
-    
-    # Print typed characters
-    terminal.addstr(x, y, typed_chars, curses.color_pair(1))
-
-    # If cursor char present, print it to the terminal
-    if cursor_char:
-
-        if state["incorrect"] == True:
-            terminal.addstr(x, y + len(typed_chars), cursor_char, curses.color_pair(4))
-
-        elif state["incorrect"] == False:
-            terminal.addstr(x, y + len(typed_chars), cursor_char, curses.color_pair(3))
-    
-    # Print untyped chars to terminal, only add 1 to y if cursor is present
-    terminal.addstr(x, y + len(typed_chars) + (1 if cursor_char else 0), untyped_chars, curses.color_pair(2))
-
-    # Finally refresh the screen
-    terminal.refresh()
-
-# Input helper function to wait for 2 certain key presses, e.g ENTER and Q
-def wait_for_key(terminal, keys = ()):
-
     while True:
+        
+        key = term.getch()
 
-        key_pressed = terminal.getch()
+        # Enter presses then restarts
+        if key == 10:
+            return "restart"
+        
+        # q key exits
+        elif key == ord("q"):
+            return "exit"
 
-        if key_pressed == keys[0]:
-            return True
-        elif key_pressed == keys[1]:
-            return False
-      
-# Main-loop to handle all main-loopy stuff
-def main_loop(terminal):
 
-    # Master state index thingo
-    state = {
-        "index": 0,
-        "errors": 0,
+# The main loop for loopy things
+def main_loop(term):
+
+    # Some stuff to hold important info
+    master_text = {}
+    master_values = {
+        
+        # Typing
+        "cursor_index": 0,
+        "len_of_text": 0,
         "started": False,
-        "start_time": None,
-        "incorrect": False,
+        "errors": 0,
         "current_wpm": 0,
-        "elapsed": 0,
+
+        # Timing
+        "start_time": 0,
+        "time_elapsed": 0
+
     }
 
-    terminal = curses.initscr() # Dosen't need to be here but need it for vscode function autocompleations
-    curses.curs_set(0)
-    terminal.nodelay(True)
+    # Set some terminal prefs
+    term = curses.initscr()
+    curses.curs_set(0)  # Hide cursor
+    term.nodelay(True)
 
+    # Setup config file and check if present
+    config = config_file()
+    config.check_for_config()
+    
     # Set some color
     curses.start_color()
     curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_GREEN, -1) # Typed letters
-    curses.init_pair(2, curses.COLOR_WHITE, -1) # Untyped letters
+    curses.init_pair(1, curses.COLOR_WHITE, -1) # Untyped letters
+    curses.init_pair(2, curses.COLOR_GREEN, -1) # Typed letters
     curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_WHITE)  # Cursor
-    curses.init_pair(4, curses.COLOR_BLACK, curses.COLOR_RED)  # Cursor incorrect
+    curses.init_pair(4, curses.COLOR_RED, -1) # Incorrect
 
     # Clear terminal
-    terminal.clear()
-    terminal.refresh()
+    term.clear()
 
-    # Print starting text
+    # Set text and add it to the master dictionary
     text = random_words(10)
-    text = "the quick brown fox jumps over the lazy dog"
-    X_CENTER, Y_CENTER = center(terminal, text)
-    terminal.addstr(X_CENTER, Y_CENTER, text, curses.color_pair(2))
+    index = 0
+    for char in text:
 
-    # Loop to handel typing
+        # Add each char to the master dictonary, along with the index and state
+        master_text[index] = {
+            "char": char,
+            "state": "untyped"
+        }
+
+        index += 1
+
+
+    # Set the legnth of the text
+    master_values["len_of_text"] = index - 1
+
+    # Print starting text, no need to use master_text as text is all one color and state
+    print_center_text(term, text)
+    
+
+    # Loop to handle typeing
     finished = False
-    while finished == False:
+    while finished != True:
 
         # Get pressed key
-        key = terminal.getch()
+        key = term.getch()
 
+        # Little thingo to quickly check if key pressed for smoother update of live wpm and timer
         if key != -1:
-            finished = handle_typing(state, key, text)
+            # Call key presses function to handle key presses
+            finished = handle_typing(master_values, key, master_text)
 
-        # Calculate the eclypsed time between last key press and this one to get wpm
-        if state["started"] == True:
-            state["elapsed"] = time.perf_counter() - state["start_time"]
-        else:
-            state["elapsed"] = 0
+        if master_values["cursor_index"] > 0:
+            # Calcualte time elapsed between last keypress and this one to get current wpm
+            master_values["time_elapsed"] = time.perf_counter() - master_values["start_time"]
 
-        if state["elapsed"] > 0:
-            state["current_wpm"] = round(
-                ((state["index"] - state["errors"]) / 5) * (60 / state["elapsed"]),
+            # Calculate live wpm from elapsed time
+            master_values["current_wpm"] = round(
+                ((master_values["cursor_index"] - master_values["errors"]) / 5) * (60 / master_values["time_elapsed"]),
                 2
             )
 
-        draw_term(terminal, text, state)
+
+        # Draw the terminal
+        draw_term(term, master_text, master_values)
 
     
-    # After while loop exits stop the timer
-    end_time = time.perf_counter()
+    # Get the finishing time
+    master_values["total_time"] = master_values["time_elapsed"]
 
-    return results(terminal, state, end_time, text)
+    # Finally print the results
+    return print_results(term, master_values, config)
 
+# Call main loop inside a wrapper to handle errors and exiting, call it inside a loop so user can restart
+while True:
 
-# Encase main loop in a wrapper to catch error and handle exiting properly
-# Encase it in a while loop
-status = "restart"
-while status == "restart": 
-    
-    status = curses.wrapper(main_loop)
+    # When app exits get the code returned
+    exit_code = curses.wrapper(main_loop)
 
-    if status == "exit":
+    # Restart app
+    if exit_code == "restart":
+        continue
+
+    # Exit app
+    elif exit_code == "exit":
         break
-    else:
-        status = "restart"
