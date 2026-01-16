@@ -165,17 +165,14 @@ def draw_term(term, master_text, master_values):
 # Function to handle key presses
 def handle_typing(master_values, key, master_text):
 
-    # Check if cursor_index is bigger than text legnth
-    if master_values["cursor_index"] > master_values["len_of_text"] - 1:
-        master_text[master_values["cursor_index"]]["state"] = "typed"
+    # Check if next curser index is the last one
+    next_index = master_values["cursor_index"] + 1
+    if next_index >= master_values["len_of_text"]:
         return True
-    
+
+
     # Check if key is an alphabetical letter or an ANSI(backspace, esc, enter) escape sequence
     if 32 <= key <= 126:
-
-        # Move cursor
-        if master_values["cursor_index"] >= 0 and master_values["cursor_index"] < master_values["len_of_text"]:
-            master_text[master_values["cursor_index"] + 1]["state"] = "cursor"
 
         # Convert key to string
         char = chr(key)
@@ -211,6 +208,10 @@ def handle_typing(master_values, key, master_text):
 
             # Move the cursor along one
             master_values["cursor_index"] += 1
+
+        # Move cursor
+        if master_values["cursor_index"] >= 0:
+            master_text[master_values["cursor_index"]]["state"] = "cursor"
     
     # Backspace
     elif key in (curses.KEY_BACKSPACE, 127, 8) and master_values["cursor_index"] > 0:
@@ -326,7 +327,7 @@ def main_loop(term):
 
 
     # Set the legnth of the text
-    master_values["len_of_text"] = index - 1
+    master_values["len_of_text"] = index
 
     # Print starting text, no need to use master_text as text is all one color and state
     print_center_text(term, text)
